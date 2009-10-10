@@ -29,13 +29,13 @@ except ImportError:
 try:
     import subprocess
 
-    def _python_cmd(*args):
+    def python_cmd(*args):
         args = (sys.executable,) + args
         return subprocess.call(args) == 0
 
 except ImportError:
     # will be used for python 2.3
-    def _python_cmd(*args):
+    def python_cmd(*args):
         args = (sys.executable,) + args
         # quoting arguments if windows
         if sys.platform == 'win32':
@@ -69,7 +69,7 @@ def _install(tarball):
     try:
         os.chdir(tmpdir)
         tar = tarfile.open(tarball)
-        _extractall(tar)
+        extractall(tar)
         tar.close()
 
         # going in the directory
@@ -79,12 +79,12 @@ def _install(tarball):
 
         # installing
         log.warn('Installing Distribute')
-        assert _python_cmd('setup.py', 'install')
+        assert python_cmd('setup.py', 'install')
     finally:
         os.chdir(old_wd)
 
 
-def _build_egg(tarball, to_dir):
+def _build_egg(tarball, to_dir=os.curdir):
     # extracting the tarball
     tmpdir = tempfile.mkdtemp()
     log.warn('Extracting in %s', tmpdir)
@@ -92,7 +92,7 @@ def _build_egg(tarball, to_dir):
     try:
         os.chdir(tmpdir)
         tar = tarfile.open(tarball)
-        _extractall(tar)
+        extractall(tar)
         tar.close()
 
         # going in the directory
@@ -102,7 +102,7 @@ def _build_egg(tarball, to_dir):
 
         # building an egg
         log.warn('Building a Distribute egg in %s', to_dir)
-        _python_cmd('setup.py', '-q', 'bdist_egg', '--dist-dir', to_dir)
+        python_cmd('setup.py -q bdist_egg --dist-dir %s' % to_dir)
 
         # returning the result
         for file in os.listdir(to_dir):
@@ -114,7 +114,8 @@ def _build_egg(tarball, to_dir):
         os.chdir(old_wd)
 
 
-def _do_download(version, download_base, to_dir, download_delay):
+def _do_download(version=DEFAULT_VERSION, download_base=DEFAULT_URL,
+                 to_dir=os.curdir, download_delay=15):
     tarball = download_setuptools(version, download_base,
                                   to_dir, download_delay)
     egg = _build_egg(tarball, to_dir)
@@ -125,8 +126,6 @@ def _do_download(version, download_base, to_dir, download_delay):
 
 def use_setuptools(version=DEFAULT_VERSION, download_base=DEFAULT_URL,
                    to_dir=os.curdir, download_delay=15):
-    # making sure we use the absolute path
-    to_dir = os.path.abspath(to_dir)
     was_imported = 'pkg_resources' in sys.modules or \
         'setuptools' in sys.modules
     try:
@@ -138,13 +137,13 @@ def use_setuptools(version=DEFAULT_VERSION, download_base=DEFAULT_URL,
     try:
         pkg_resources.require("distribute>="+version)
         return
-    except pkg_resources.VersionConflict, e:
+    except pkg_resources.VersionConflict as e:
         if was_imported:
-            print >>sys.stderr, (
+            print((
             "The required version of distribute (>=%s) is not available, and\n"
             "can't be installed while this script is running. Please install\n"
             " a more recent version first, using 'easy_install -U distribute'."
-            "\n\n(Currently using %r)") % (version, e.args[0])
+            "\n\n(Currently using %r)") % (version, e.args[0]), file=sys.stderr)
             sys.exit(2)
         else:
             del pkg_resources, sys.modules['pkg_resources']    # reload ok
@@ -163,9 +162,7 @@ def download_setuptools(version=DEFAULT_VERSION, download_base=DEFAULT_URL,
     `delay` is the number of seconds to pause before an actual download
     attempt.
     """
-    # making sure we use the absolute path
-    to_dir = os.path.abspath(to_dir)
-    import urllib2
+    import urllib.request, urllib.error, urllib.parse
     tgz_name = "distribute-%s.tar.gz" % version
     url = download_base + tgz_name
     saveto = os.path.join(to_dir, tgz_name)
@@ -173,7 +170,7 @@ def download_setuptools(version=DEFAULT_VERSION, download_base=DEFAULT_URL,
     if not os.path.exists(saveto):  # Avoid repeated downloads
         try:
             log.warn("Downloading %s", url)
-            src = urllib2.urlopen(url)
+            src = urllib.request.urlopen(url)
             # Read/write all in one block, so we don't create a corrupt file
             # if the download is interrupted.
             data = src.read()
@@ -256,7 +253,7 @@ def _remove_flat_installation(placeholder):
     return True
 
 
-def _after_install(dist):
+def after_install(dist):
     log.warn('After install bootstrap.')
     placeholder = dist.get_command_obj('install').install_purelib
     if not placeholder or not os.path.exists(placeholder):
@@ -302,7 +299,7 @@ def _patch_egg_dir(path):
     return True
 
 
-def _before_install():
+def before_install():
     log.warn('Before install bootstrap.')
     fake_setuptools()
 
@@ -378,7 +375,7 @@ def _relaunch():
     sys.exit(subprocess.call(args))
 
 
-def _extractall(self, path=".", members=None):
+def extractall(self, path=".", members=None):
     """Extract all members from the archive to the current working
        directory and set owner, modification time and permissions on
        directories afterwards. `path' specifies a different directory
@@ -398,7 +395,7 @@ def _extractall(self, path=".", members=None):
             # Extract directories with a safe mode.
             directories.append(tarinfo)
             tarinfo = copy.copy(tarinfo)
-            tarinfo.mode = 0700
+            tarinfo.mode = 0o700
         self.extract(tarinfo, path)
 
     # Reverse sort directories.
@@ -417,7 +414,7 @@ def _extractall(self, path=".", members=None):
             self.chown(tarinfo, dirpath)
             self.utime(tarinfo, dirpath)
             self.chmod(tarinfo, dirpath)
-        except ExtractError, e:
+        except ExtractError as e:
             if self.errorlevel > 1:
                 raise
             else:
