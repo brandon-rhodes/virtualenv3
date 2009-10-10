@@ -4,25 +4,14 @@
 * This module is automatically imported during initialization. *
 ****************************************************************
 
-In earlier versions of Python (up to 1.5a3), scripts or modules that
-needed to use site-specific modules would place ``import site''
-somewhere near the top of their code.  Because of the automatic
-import, this is no longer necessary (but code that does it still
-works).
-
 This will append site-specific paths to the module search path.  On
-Unix, it starts with sys.prefix and sys.exec_prefix (if different) and
-appends lib/python<version>/site-packages as well as lib/site-python.
-It also supports the Debian convention of
-lib/python<version>/dist-packages.  On other platforms (mainly Mac and
-Windows), it uses just sys.prefix (and sys.exec_prefix, if different,
-but this is unlikely).  The resulting directories, if they exist, are
-appended to sys.path, and also inspected for path configuration files.
-
-FOR DEBIAN, this sys.path is augmented with directories in /usr/local.
-Local addons go into /usr/local/lib/python<version>/site-packages
-(resp. /usr/local/lib/site-python), Debian addons install into
-/usr/{lib,share}/python<version>/dist-packages.
+Unix (including Mac OSX), it starts with sys.prefix and
+sys.exec_prefix (if different) and appends
+lib/python<version>/site-packages as well as lib/site-python.
+On other platforms (such as Windows), it tries each of the
+prefixes directly, as well as with lib/site-packages appended.  The
+resulting directories, if they exist, are appended to sys.path, and
+also inspected for path configuration files.
 
 A path configuration file is a file whose name has the form
 <package>.pth; its contents are additional directories (one per line)
@@ -32,7 +21,7 @@ sys.path more than once.  Blank lines and lines beginning with
 '#' are skipped. Lines starting with 'import' are executed.
 
 For example, suppose sys.prefix and sys.exec_prefix are set to
-/usr/local and there is a directory /usr/local/lib/python2.X/site-packages
+/usr/local and there is a directory /usr/local/lib/python2.5/site-packages
 with three subdirectories, foo, bar and spam, and two path
 configuration files, foo.pth and bar.pth.  Assume foo.pth contains the
 following:
@@ -49,8 +38,8 @@ and bar.pth contains:
 
 Then the following directories are added to sys.path, in this order:
 
-  /usr/local/lib/python2.X/site-packages/bar
-  /usr/local/lib/python2.X/site-packages/foo
+  /usr/local/lib/python2.5/site-packages/bar
+  /usr/local/lib/python2.5/site-packages/foo
 
 Note that bletch is omitted because it doesn't exist; bar precedes foo
 because bar.pth comes alphabetically before foo.pth; and spam is
@@ -65,11 +54,7 @@ ImportError exception, it is silently ignored.
 
 import sys
 import os
-import __builtin__
-try:
-    set
-except NameError:
-    from sets import Set as set
+import builtins
 
 # Prefixes for site-packages; add additional prefixes like /usr/local here
 PREFIXES = [sys.prefix, sys.exec_prefix]
@@ -80,23 +65,22 @@ ENABLE_USER_SITE = None
 USER_SITE = None
 USER_BASE = None
 
-_is_jython = sys.platform[:4] == 'java'
 
 def makepath(*paths):
-    dir = os.path.join(*paths)
-    if _is_jython and (dir == '__classpath__' or
-                       dir.startswith('__pyclasspath__')):
-        return dir, dir
-    dir = os.path.abspath(dir)
+    dir = os.path.abspath(os.path.join(*paths))
     return dir, os.path.normcase(dir)
+
 
 def abs__file__():
     """Set all module' __file__ attribute to an absolute path"""
-    for m in sys.modules.values():
-        f = getattr(m, '__file__', None)
-        if f is None:
+    for m in set(sys.modules.values()):
+        if hasattr(m, '__loader__'):
+            continue   # don't mess with a PEP 302-supplied __file__
+        try:
+            m.__file__ = os.path.abspath(m.__file__)
+        except AttributeError:
             continue
-        m.__file__ = os.path.abspath(f)
+
 
 def removeduppaths():
     """ Remove duplicate entries from sys.path along with making them
@@ -128,6 +112,7 @@ def addbuilddir():
     s = os.path.join(os.path.dirname(sys.path[-1]), s)
     sys.path.append(s)
 
+
 def _init_pathinfo():
     """Return a set containing all existing directory entries from sys.path"""
     d = set()
@@ -140,9 +125,12 @@ def _init_pathinfo():
             continue
     return d
 
+
 def addpackage(sitedir, name, known_paths):
-    """Add a new path to known_paths by combining sitedir and 'name' or execute
-    sitedir if it starts with 'import'"""
+    """Process a .pth file within the site-packages directory:
+       For each line in the file, either combine it with sitedir to a path
+       and add that to known_paths, or execute it if it starts with 'import '.
+    """
     if known_paths is None:
         _init_pathinfo()
         reset = 1
@@ -153,23 +141,22 @@ def addpackage(sitedir, name, known_paths):
         f = open(fullname, "rU")
     except IOError:
         return
-    try:
+    with f:
         for line in f:
             if line.startswith("#"):
                 continue
-            if line.startswith("import"):
-                exec line
+            if line.startswith(("import ", "import\t")):
+                exec(line)
                 continue
             line = line.rstrip()
             dir, dircase = makepath(sitedir, line)
             if not dircase in known_paths and os.path.exists(dir):
                 sys.path.append(dir)
                 known_paths.add(dircase)
-    finally:
-        f.close()
     if reset:
         known_paths = None
     return known_paths
+
 
 def addsitedir(sitedir, known_paths=None):
     """Add 'sitedir' argument to sys.path if missing and handle .pth files in
@@ -186,79 +173,13 @@ def addsitedir(sitedir, known_paths=None):
         names = os.listdir(sitedir)
     except os.error:
         return
-    names.sort()
-    for name in names:
-        if name.endswith(os.extsep + "pth"):
-            addpackage(sitedir, name, known_paths)
+    names = [name for name in names if name.endswith(".pth")]
+    for name in sorted(names):
+        addpackage(sitedir, name, known_paths)
     if reset:
         known_paths = None
     return known_paths
 
-def addsitepackages(known_paths, sys_prefix=sys.prefix, exec_prefix=sys.exec_prefix):
-    """Add site-packages (and possibly site-python) to sys.path"""
-    prefixes = [os.path.join(sys_prefix, "local"), sys_prefix]
-    if exec_prefix != sys_prefix:
-        prefixes.append(os.path.join(exec_prefix, "local"))
-
-    for prefix in prefixes:
-        if prefix:
-            if sys.platform in ('os2emx', 'riscos') or _is_jython:
-                sitedirs = [os.path.join(prefix, "Lib", "site-packages")]
-            elif sys.platform == 'darwin' and prefix == sys_prefix:
-
-                if prefix.startswith("/System/Library/Frameworks/"): # Apple's Python
-
-                    sitedirs = [os.path.join("/Library/Python", sys.version[:3], "site-packages"),
-                                os.path.join(prefix, "Extras", "lib", "python")]
-
-                else: # any other Python distros on OSX work this way
-                    sitedirs = [os.path.join(prefix, "lib",
-                                             "python" + sys.version[:3], "site-packages")]
-
-            elif os.sep == '/':
-                sitedirs = [os.path.join(prefix,
-                                         "lib",
-                                         "python" + sys.version[:3],
-                                         "site-packages"),
-                            os.path.join(prefix, "lib", "site-python"),
-                            os.path.join(prefix, "python" + sys.version[:3], "lib-dynload")]
-                lib64_dir = os.path.join(prefix, "lib64", "python" + sys.version[:3], "site-packages")
-                if (os.path.exists(lib64_dir) and 
-                    os.path.realpath(lib64_dir) not in [os.path.realpath(p) for p in sitedirs]):
-                    sitedirs.append(lib64_dir)
-                try:
-                    # sys.getobjects only available in --with-pydebug build
-                    sys.getobjects
-                    sitedirs.insert(0, os.path.join(sitedirs[0], 'debug'))
-                except AttributeError:
-                    pass
-                # Debian-specific dist-packages directories:
-                sitedirs.append(os.path.join(prefix, "lib",
-                                             "python" + sys.version[:3],
-                                             "dist-packages"))
-                sitedirs.append(os.path.join(prefix, "local/lib",
-                                             "python" + sys.version[:3],
-                                             "dist-packages"))
-                sitedirs.append(os.path.join(prefix, "lib", "dist-python"))
-            else:
-                sitedirs = [prefix, os.path.join(prefix, "lib", "site-packages")]
-            if sys.platform == 'darwin':
-                # for framework builds *only* we add the standard Apple
-                # locations. Currently only per-user, but /Library and
-                # /Network/Library could be added too
-                if 'Python.framework' in prefix:
-                    home = os.environ.get('HOME')
-                    if home:
-                        sitedirs.append(
-                            os.path.join(home,
-                                         'Library',
-                                         'Python',
-                                         sys.version[:3],
-                                         'site-packages'))
-            for sitedir in sitedirs:
-                if os.path.isdir(sitedir):
-                    addsitedir(sitedir, known_paths)
-    return None
 
 def check_enableusersite():
     """Check if user site directory is safe for inclusion
@@ -270,7 +191,7 @@ def check_enableusersite():
     False: Disabled by user (command line option)
     True: Safe and enabled
     """
-    if hasattr(sys, 'flags') and getattr(sys.flags, 'no_user_site', False):
+    if sys.flags.no_user_site:
         return False
 
     if hasattr(os, "getuid") and hasattr(os, "geteuid"):
@@ -283,6 +204,7 @@ def check_enableusersite():
             return None
 
     return True
+
 
 def addusersitepackages(known_paths):
     """Add a per user site-package to sys.path
@@ -308,33 +230,59 @@ def addusersitepackages(known_paths):
     #    USER_SITE = ''
     if os.name == "nt":
         base = os.environ.get("APPDATA") or "~"
-        if env_base:
-            USER_BASE = env_base
-        else:
-            USER_BASE = joinuser(base, "Python")
+        USER_BASE = env_base if env_base else joinuser(base, "Python")
         USER_SITE = os.path.join(USER_BASE,
                                  "Python" + sys.version[0] + sys.version[2],
                                  "site-packages")
     else:
-        if env_base:
-            USER_BASE = env_base
-        else:
-            USER_BASE = joinuser("~", ".local")
+        USER_BASE = env_base if env_base else joinuser("~", ".local")
         USER_SITE = os.path.join(USER_BASE, "lib",
                                  "python" + sys.version[:3],
                                  "site-packages")
 
     if ENABLE_USER_SITE and os.path.isdir(USER_SITE):
         addsitedir(USER_SITE, known_paths)
-    if ENABLE_USER_SITE:
-        for dist_libdir in ("lib", "local/lib"):
-            user_site = os.path.join(USER_BASE, dist_libdir,
-                                     "python" + sys.version[:3],
-                                     "dist-packages")
-            if os.path.isdir(user_site):
-                addsitedir(user_site, known_paths)
     return known_paths
 
+
+def addsitepackages(known_paths):
+    """Add site-packages (and possibly site-python) to sys.path"""
+    sitedirs = []
+    seen = []
+
+    for prefix in PREFIXES:
+        if not prefix or prefix in seen:
+            continue
+        seen.append(prefix)
+
+        if sys.platform in ('os2emx', 'riscos'):
+            sitedirs.append(os.path.join(prefix, "Lib", "site-packages"))
+        elif os.sep == '/':
+            sitedirs.append(os.path.join(prefix, "lib",
+                                        "python" + sys.version[:3],
+                                        "site-packages"))
+            sitedirs.append(os.path.join(prefix, "lib", "site-python"))
+        else:
+            sitedirs.append(prefix)
+            sitedirs.append(os.path.join(prefix, "lib", "site-packages"))
+
+        if sys.platform == "darwin":
+            # for framework builds *only* we add the standard Apple
+            # locations.
+            if 'Python.framework' in prefix:
+                sitedirs.append(
+                    os.path.expanduser(
+                        os.path.join("~", "Library", "Python",
+                                     sys.version[:3], "site-packages")))
+                sitedirs.append(
+                        os.path.join("/Library", "Python",
+                            sys.version[:3], "site-packages"))
+
+    for sitedir in sitedirs:
+        if os.path.isdir(sitedir):
+            addsitedir(sitedir, known_paths)
+
+    return known_paths
 
 
 def setBEGINLIBPATH():
@@ -375,12 +323,17 @@ def setquit():
             # Shells like IDLE catch the SystemExit, but listen when their
             # stdin wrapper is closed.
             try:
-                sys.stdin.close()
+                fd = -1
+                if hasattr(sys.stdin, "fileno"):
+                    fd = sys.stdin.fileno()
+                if fd != 0:
+                    # Don't close stdin if it wraps fd 0
+                    sys.stdin.close()
             except:
                 pass
             raise SystemExit(code)
-    __builtin__.quit = Quitter('quit')
-    __builtin__.exit = Quitter('exit')
+    builtins.quit = Quitter('quit')
+    builtins.exit = Quitter('exit')
 
 
 class _Printer(object):
@@ -404,7 +357,7 @@ class _Printer(object):
             for filename in self.__files:
                 filename = os.path.join(dir, filename)
                 try:
-                    fp = file(filename, "rU")
+                    fp = open(filename, "rU")
                     data = fp.read()
                     fp.close()
                     break
@@ -431,32 +384,32 @@ class _Printer(object):
         while 1:
             try:
                 for i in range(lineno, lineno + self.MAXLINES):
-                    print self.__lines[i]
+                    print(self.__lines[i])
             except IndexError:
                 break
             else:
                 lineno += self.MAXLINES
                 key = None
                 while key is None:
-                    key = raw_input(prompt)
+                    key = input(prompt)
                     if key not in ('', 'q'):
                         key = None
                 if key == 'q':
                     break
 
 def setcopyright():
-    """Set 'copyright' and 'credits' in __builtin__"""
-    __builtin__.copyright = _Printer("copyright", sys.copyright)
-    if _is_jython:
-        __builtin__.credits = _Printer(
+    """Set 'copyright' and 'credits' in builtins"""
+    builtins.copyright = _Printer("copyright", sys.copyright)
+    if sys.platform[:4] == 'java':
+        builtins.credits = _Printer(
             "credits",
             "Jython is maintained by the Jython developers (www.jython.org).")
     else:
-        __builtin__.credits = _Printer("credits", """\
+        builtins.credits = _Printer("credits", """\
     Thanks to CWI, CNRI, BeOpen.com, Zope Corporation and a cast of thousands
     for supporting Python development.  See www.python.org for more information.""")
     here = os.path.dirname(os.__file__)
-    __builtin__.license = _Printer(
+    builtins.license = _Printer(
         "license", "See http://www.python.org/%.3s/license.html" % sys.version,
         ["LICENSE.txt", "LICENSE"],
         [os.path.join(here, os.pardir), here, os.curdir])
@@ -476,7 +429,7 @@ class _Helper(object):
         return pydoc.help(*args, **kwds)
 
 def sethelper():
-    __builtin__.help = _Helper()
+    builtins.help = _Helper()
 
 def aliasmbcs():
     """On Windows, some default encodings are not provided by Python,
@@ -519,82 +472,14 @@ def execsitecustomize():
         import sitecustomize
     except ImportError:
         pass
+    except Exception as err:
+        if os.environ.get("PYTHONVERBOSE"):
+            raise
+        sys.stderr.write(
+            "Error in sitecustomize; set PYTHONVERBOSE for traceback:\n"
+            "%s: %s\n" %
+            (err.__class__.__name__, err))
 
-def virtual_install_main_packages():
-    f = open(os.path.join(os.path.dirname(__file__), 'orig-prefix.txt'))
-    sys.real_prefix = f.read().strip()
-    f.close()
-    pos = 2
-    if sys.path[0] == '':
-        pos += 1
-    if sys.platform == 'win32':
-        paths = [os.path.join(sys.real_prefix, 'Lib'), os.path.join(sys.real_prefix, 'DLLs')]
-    elif _is_jython:
-        paths = [os.path.join(sys.real_prefix, 'Lib')]
-    else:
-        paths = [os.path.join(sys.real_prefix, 'lib', 'python'+sys.version[:3])]
-        lib64_path = os.path.join(sys.real_prefix, 'lib64', 'python'+sys.version[:3])
-        if os.path.exists(lib64_path):
-            paths.append(lib64_path)
-        # This is hardcoded in the Python executable, but relative to sys.prefix:
-        plat_path = os.path.join(sys.real_prefix, 'lib', 'python'+sys.version[:3],
-                                 'plat-%s' % sys.platform)
-        if os.path.exists(plat_path):
-            paths.append(plat_path)
-    # This is hardcoded in the Python executable, but
-    # relative to sys.prefix, so we have to fix up:
-    for path in list(paths):
-        tk_dir = os.path.join(path, 'lib-tk')
-        if os.path.exists(tk_dir):
-            paths.append(tk_dir)
-
-    # These are hardcoded in the Apple's Python executable,
-    # but relative to sys.prefix, so we have to fix them up:
-    if sys.platform == 'darwin':
-        hardcoded_paths = [os.path.join(sys.real_prefix, 'lib', 'python'+sys.version[:3], module)
-                           for module in ('plat-darwin', 'plat-mac', 'plat-mac/lib-scriptpackages')]
-
-        for path in hardcoded_paths:
-            if os.path.exists(path):
-                paths.append(path)
-
-    sys.path.extend(paths)
-
-def force_global_eggs_after_local_site_packages():
-    """
-    Force easy_installed eggs in the global environment to get placed
-    in sys.path after all packages inside the virtualenv.  This
-    maintains the "least surprise" result that packages in the
-    virtualenv always mask global packages, never the other way
-    around.
-    
-    """
-    egginsert = getattr(sys, '__egginsert', 0)
-    for i, path in enumerate(sys.path):
-        if i > egginsert and path.startswith(sys.prefix):
-            egginsert = i
-    sys.__egginsert = egginsert + 1
-    
-def virtual_addsitepackages(known_paths):
-    if not os.path.exists(os.path.join(os.path.dirname(__file__), 'no-global-site-packages.txt')):
-        force_global_eggs_after_local_site_packages()
-        return addsitepackages(known_paths, sys_prefix=sys.real_prefix)
-    else:
-        return known_paths
-
-def fixclasspath():
-    """Adjust the special classpath sys.path entries for Jython. These
-    entries should follow the base virtualenv lib directories.
-    """
-    paths = []
-    classpaths = []
-    for path in sys.path:
-        if path == '__classpath__' or path.startswith('__pyclasspath__'):
-            classpaths.append(path)
-        else:
-            paths.append(path)
-    sys.path = paths
-    sys.path.extend(classpaths)
 
 def execusercustomize():
     """Run custom user specific code, if available."""
@@ -606,19 +491,16 @@ def execusercustomize():
 
 def main():
     global ENABLE_USER_SITE
-    virtual_install_main_packages()
+
     abs__file__()
-    paths_in_sys = removeduppaths()
+    known_paths = removeduppaths()
     if (os.name == "posix" and sys.path and
         os.path.basename(sys.path[-1]) == "Modules"):
         addbuilddir()
-    if _is_jython:
-        fixclasspath()
     if ENABLE_USER_SITE is None:
         ENABLE_USER_SITE = check_enableusersite()
-    paths_in_sys = addusersitepackages(paths_in_sys)
-    paths_in_sys = addsitepackages(paths_in_sys)
-    paths_in_sys = virtual_addsitepackages(paths_in_sys)
+    known_paths = addusersitepackages(known_paths)
+    known_paths = addsitepackages(known_paths)
     if sys.platform == 'os2emx':
         setBEGINLIBPATH()
     setquit()
@@ -654,18 +536,15 @@ def _script():
     """
     args = sys.argv[1:]
     if not args:
-        print "sys.path = ["
+        print("sys.path = [")
         for dir in sys.path:
-            print "    %r," % (dir,)
-        print "]"
-        def exists(path):
-            if os.path.isdir(path):
-                return "exists"
-            else:
-                return "doesn't exist"
-        print "USER_BASE: %r (%s)" % (USER_BASE, exists(USER_BASE))
-        print "USER_SITE: %r (%s)" % (USER_SITE, exists(USER_BASE))
-        print "ENABLE_USER_SITE: %r" %  ENABLE_USER_SITE
+            print("    %r," % (dir,))
+        print("]")
+        print("USER_BASE: %r (%s)" % (USER_BASE,
+            "exists" if os.path.isdir(USER_BASE) else "doesn't exist"))
+        print("USER_SITE: %r (%s)" % (USER_SITE,
+            "exists" if os.path.isdir(USER_SITE) else "doesn't exist"))
+        print("ENABLE_USER_SITE: %r" %  ENABLE_USER_SITE)
         sys.exit(0)
 
     buffer = []
@@ -675,7 +554,7 @@ def _script():
         buffer.append(USER_SITE)
 
     if buffer:
-        print os.pathsep.join(buffer)
+        print(os.pathsep.join(buffer))
         if ENABLE_USER_SITE:
             sys.exit(0)
         elif ENABLE_USER_SITE is False:
@@ -686,7 +565,7 @@ def _script():
             sys.exit(3)
     else:
         import textwrap
-        print textwrap.dedent(help % (sys.argv[0], os.pathsep))
+        print(textwrap.dedent(help % (sys.argv[0], os.pathsep)))
         sys.exit(10)
 
 if __name__ == '__main__':
