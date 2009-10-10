@@ -20,12 +20,8 @@ REQUIRED_MODULES = ['os', 'posix', 'posixpath', 'ntpath', 'genericpath',
                     'fnmatch', 'locale', 'encodings', 'codecs',
                     'stat', 'UserDict', 'readline', 'copy_reg', 'types',
                     're', 'sre', 'sre_parse', 'sre_constants', 'sre_compile',
-                    'lib-dynload', 'config', 'zlib']
-
-if sys.version_info[:2] == (2, 6):
-    REQUIRED_MODULES.extend(['warnings', 'linecache', '_abcoll', 'abc'])
-if sys.version_info[:2] <= (2, 3):
-    REQUIRED_MODULES.extend(['sets', '__future__'])
+                    'lib-dynload', 'config', 'zlib', 'warnings', 'linecache',
+                    '_abcoll', 'abc']
 
 class Logger(object):
 
