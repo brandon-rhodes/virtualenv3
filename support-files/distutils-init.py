@@ -1,20 +1,20 @@
 import os
 import sys
 import warnings 
-import ConfigParser # ConfigParser is not a virtualenv module, so we can use it to find the stdlib
+import configparser # configparser is not a virtualenv module, so we can use it to find the stdlib
 
 dirname = os.path.dirname
 
-distutils_path = os.path.join(os.path.dirname(ConfigParser.__file__), 'distutils')
+distutils_path = os.path.join(os.path.dirname(configparser.__file__), 'distutils')
 if os.path.normpath(distutils_path) == os.path.dirname(os.path.normpath(__file__)):
     warnings.warn(
         "The virtualenv distutils package at %s appears to be in the same location as the system distutils?")
 else:
     __path__.insert(0, distutils_path)
-    exec open(os.path.join(distutils_path, '__init__.py')).read()
+    exec(open(os.path.join(distutils_path, '__init__.py')).read())
 
-import dist
-import sysconfig
+from distutils import dist
+from distutils import sysconfig
 
 
 ## patch build_ext (distutils doesn't know how to get the libs directory
