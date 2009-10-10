@@ -10,6 +10,7 @@ import logging
 import distutils.sysconfig
 import zlib
 import base64
+import subprocess
     
 join = os.path.join
 py_version = 'python%s.%s' % (sys.version_info[0], sys.version_info[1])
@@ -21,7 +22,7 @@ REQUIRED_MODULES = ['os', 'posix', 'posixpath', 'ntpath', 'genericpath',
                     'stat', 'UserDict', 'readline', 'copy_reg', 'types',
                     're', 'sre', 'sre_parse', 'sre_constants', 'sre_compile',
                     'lib-dynload', 'config', 'zlib', 'warnings', 'linecache',
-                    '_abcoll', 'abc']
+                    '_abcoll', 'abc', 'io', '_weakrefset', 'copyreg']
 
 class Logger(object):
 
@@ -564,7 +565,7 @@ def install_python(home_dir, lib_dir, inc_dir, bin_dir, site_packages, clear):
             logger.indent -= 2
     mkdir(join(lib_dir, 'site-packages'))
     writefile(join(lib_dir, 'site.py'), SITE_PY)
-    writefile(join(lib_dir, 'orig-prefix.txt'), prefix)
+    writefile(join(lib_dir, 'orig-prefix.txt'), prefix.encode('utf-8'))
     site_packages_filename = join(lib_dir, 'no-global-site-packages.txt')
     if not site_packages:
         writefile(site_packages_filename, '')
@@ -701,12 +702,13 @@ def install_python(home_dir, lib_dir, inc_dir, bin_dir, site_packages, clear):
         # argument that has a space in it.  Instead we have to quote
         # the value:
         py_executable = '"%s"' % py_executable
-    cmd = [py_executable, '-c', 'import sys; print sys.prefix']
+    cmd = [py_executable, '-c',
+           'import sys; sys.stdout.write(sys.prefix)']
     logger.info('Testing executable with %s %s "%s"' % tuple(cmd))
-    proc = subprocess.Popen(cmd,
-                            stdout=subprocess.PIPE)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE)
     proc_stdout, proc_stderr = proc.communicate()
-    proc_stdout = os.path.normcase(os.path.abspath(proc_stdout.strip()))
+    proc_stdout = proc_stdout.decode('utf-8').strip()
+    proc_stdout = os.path.normcase(os.path.abspath(proc_stdout))
     if proc_stdout != os.path.normcase(os.path.abspath(home_dir)):
         logger.fatal(
             'ERROR: The executable %s is not functioning' % py_executable)
