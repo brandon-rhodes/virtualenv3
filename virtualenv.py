@@ -572,7 +572,7 @@ def install_python(home_dir, lib_dir, inc_dir, bin_dir, site_packages, clear):
     writefile(join(lib_dir, 'orig-prefix.txt'), prefix.encode('utf-8'))
     site_packages_filename = join(lib_dir, 'no-global-site-packages.txt')
     if not site_packages:
-        writefile(site_packages_filename, '')
+        writefile(site_packages_filename, b'')
     else:
         if os.path.exists(site_packages_filename):
             logger.info('Deleting %s' % site_packages_filename)
