@@ -65,9 +65,14 @@ ENABLE_USER_SITE = None
 USER_SITE = None
 USER_BASE = None
 
+_is_jython = sys.platform[:4] == 'java'
 
 def makepath(*paths):
-    dir = os.path.abspath(os.path.join(*paths))
+    dir = os.path.join(*paths)
+    if _is_jython and (dir == '__classpath__' or
+                       dir.startswith('__pyclasspath__')):
+        return dir, dir
+    dir = os.path.abspath(dir)
     return dir, os.path.normcase(dir)
 
 
@@ -242,6 +247,15 @@ def addusersitepackages(known_paths):
 
     if ENABLE_USER_SITE and os.path.isdir(USER_SITE):
         addsitedir(USER_SITE, known_paths)
+
+    if ENABLE_USER_SITE:
+        for dist_libdir in ("lib", "local/lib"):
+            user_site = os.path.join(USER_BASE, dist_libdir,
+                                     "python" + sys.version[:3],
+                                     "dist-packages")
+            if os.path.isdir(user_site):
+                addsitedir(user_site, known_paths)
+
     return known_paths
 
 
@@ -255,13 +269,41 @@ def addsitepackages(known_paths):
             continue
         seen.append(prefix)
 
-        if sys.platform in ('os2emx', 'riscos'):
+        if sys.platform in ('os2emx', 'riscos') or _is_jython:
             sitedirs.append(os.path.join(prefix, "Lib", "site-packages"))
         elif os.sep == '/':
             sitedirs.append(os.path.join(prefix, "lib",
                                         "python" + sys.version[:3],
                                         "site-packages"))
             sitedirs.append(os.path.join(prefix, "lib", "site-python"))
+
+            # virtualenv: add lib64 directory if it's not a symlink to a
+            # directory we already have listed.
+            lib64_dir = os.path.join(prefix, "lib64",
+                                     "python" + sys.version[:3],
+                                     "site-packages")
+            if (os.path.exists(lib64_dir) and 
+                os.path.realpath(lib64_dir) not in
+                [os.path.realpath(p) for p in sitedirs]):
+                sitedirs.append(lib64_dir)
+
+            # virtualenv: add debug directory if appropriate.
+            try:
+                # sys.getobjects only available in --with-pydebug build
+                sys.getobjects
+                sitedirs.insert(0, os.path.join(sitedirs[0], 'debug'))
+            except AttributeError:
+                pass
+
+            # virtualenv: Debian-specific dist-packages directories:
+            sitedirs.append(os.path.join(prefix, "lib",
+                                         "python" + sys.version[:3],
+                                         "dist-packages"))
+            sitedirs.append(os.path.join(prefix, "local/lib",
+                                         "python" + sys.version[:3],
+                                         "dist-packages"))
+            sitedirs.append(os.path.join(prefix, "lib", "dist-python"))
+
         else:
             sitedirs.append(prefix)
             sitedirs.append(os.path.join(prefix, "lib", "site-packages"))
@@ -400,7 +442,7 @@ class _Printer(object):
 def setcopyright():
     """Set 'copyright' and 'credits' in builtins"""
     builtins.copyright = _Printer("copyright", sys.copyright)
-    if sys.platform[:4] == 'java':
+    if _is_jython:
         builtins.credits = _Printer(
             "credits",
             "Jython is maintained by the Jython developers (www.jython.org).")
@@ -481,6 +523,83 @@ def execsitecustomize():
             (err.__class__.__name__, err))
 
 
+def virtual_install_main_packages():
+    f = open(os.path.join(os.path.dirname(__file__), 'orig-prefix.txt'))
+    sys.real_prefix = f.read().strip()
+    f.close()
+    pos = 2
+    if sys.path[0] == '':
+        pos += 1
+    if sys.platform == 'win32':
+        paths = [os.path.join(sys.real_prefix, 'Lib'), os.path.join(sys.real_prefix, 'DLLs')]
+    elif _is_jython:
+        paths = [os.path.join(sys.real_prefix, 'Lib')]
+    else:
+        paths = [os.path.join(sys.real_prefix, 'lib', 'python'+sys.version[:3])]
+        lib64_path = os.path.join(sys.real_prefix, 'lib64', 'python'+sys.version[:3])
+        if os.path.exists(lib64_path):
+            paths.append(lib64_path)
+        # This is hardcoded in the Python executable, but relative to sys.prefix:
+        plat_path = os.path.join(sys.real_prefix, 'lib', 'python'+sys.version[:3],
+                                 'plat-%s' % sys.platform)
+        if os.path.exists(plat_path):
+            paths.append(plat_path)
+    # This is hardcoded in the Python executable, but
+    # relative to sys.prefix, so we have to fix up:
+    for path in list(paths):
+        tk_dir = os.path.join(path, 'lib-tk')
+        if os.path.exists(tk_dir):
+            paths.append(tk_dir)
+
+    # These are hardcoded in the Apple's Python executable,
+    # but relative to sys.prefix, so we have to fix them up:
+    if sys.platform == 'darwin':
+        hardcoded_paths = [os.path.join(sys.real_prefix, 'lib', 'python'+sys.version[:3], module)
+                           for module in ('plat-darwin', 'plat-mac', 'plat-mac/lib-scriptpackages')]
+
+        for path in hardcoded_paths:
+            if os.path.exists(path):
+                paths.append(path)
+
+    sys.path.extend(paths)
+
+def force_global_eggs_after_local_site_packages():
+    """
+    Force easy_installed eggs in the global environment to get placed
+    in sys.path after all packages inside the virtualenv.  This
+    maintains the "least surprise" result that packages in the
+    virtualenv always mask global packages, never the other way
+    around.
+    
+    """
+    egginsert = getattr(sys, '__egginsert', 0)
+    for i, path in enumerate(sys.path):
+        if i > egginsert and path.startswith(sys.prefix):
+            egginsert = i
+    sys.__egginsert = egginsert + 1
+    
+def virtual_addsitepackages(known_paths):
+    if not os.path.exists(os.path.join(os.path.dirname(__file__), 'no-global-site-packages.txt')):
+        force_global_eggs_after_local_site_packages()
+        return addsitepackages(known_paths, sys_prefix=sys.real_prefix)
+    else:
+        return known_paths
+
+def fixclasspath():
+    """Adjust the special classpath sys.path entries for Jython. These
+    entries should follow the base virtualenv lib directories.
+    """
+    paths = []
+    classpaths = []
+    for path in sys.path:
+        if path == '__classpath__' or path.startswith('__pyclasspath__'):
+            classpaths.append(path)
+        else:
+            paths.append(path)
+    sys.path = paths
+    sys.path.extend(classpaths)
+
+
 def execusercustomize():
     """Run custom user specific code, if available."""
     try:
@@ -492,15 +611,20 @@ def execusercustomize():
 def main():
     global ENABLE_USER_SITE
 
+    virtual_install_main_packages()  # the magic that makes this a virtualenv
+
     abs__file__()
     known_paths = removeduppaths()
     if (os.name == "posix" and sys.path and
         os.path.basename(sys.path[-1]) == "Modules"):
         addbuilddir()
+    if _is_jython:
+        fixclasspath()
     if ENABLE_USER_SITE is None:
         ENABLE_USER_SITE = check_enableusersite()
     known_paths = addusersitepackages(known_paths)
     known_paths = addsitepackages(known_paths)
+    known_paths = virtual_addsitepackages(known_paths)
     if sys.platform == 'os2emx':
         setBEGINLIBPATH()
     setquit()
