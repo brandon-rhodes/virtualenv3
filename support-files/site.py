@@ -259,12 +259,17 @@ def addusersitepackages(known_paths):
     return known_paths
 
 
-def addsitepackages(known_paths):
+def addsitepackages(known_paths, sys_prefix=sys.prefix,
+                    exec_prefix=sys.exec_prefix):
     """Add site-packages (and possibly site-python) to sys.path"""
     sitedirs = []
     seen = []
 
-    for prefix in PREFIXES:
+    prefixes = [os.path.join(sys_prefix, "local"), sys_prefix]
+    if exec_prefix != sys_prefix:
+        prefixes.append(os.path.join(exec_prefix, "local"))
+
+    for prefix in prefixes:
         if not prefix or prefix in seen:
             continue
         seen.append(prefix)
