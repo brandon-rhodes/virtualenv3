@@ -2,7 +2,7 @@ try:
     from setuptools import setup
 except ImportError:
     from distutils.core import setup
-    print 'Note: without Setuptools installed you will have to use "python3 -m virtualenv3 ENV"'
+    print('Note: without Setuptools installed you will have to use "python3 -m virtualenv3 ENV"')
 import sys, os
 
 version = '1.3.4.1'
