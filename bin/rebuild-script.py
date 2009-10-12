@@ -8,7 +8,7 @@ import os
 import zlib
 
 here = os.path.dirname(__file__)
-script = os.path.join(here, '..', 'virtualenv.py')
+script = os.path.join(here, '..', 'virtualenv3.py')
 
 file_regex = re.compile(
     r'##file (.*?)\n([a-zA-Z][a-zA-Z0-9_]+)\s*=\s*zlib\.decompress\(base64\.b64decode\(b"""\n(.*?)"""\)\)\n',
