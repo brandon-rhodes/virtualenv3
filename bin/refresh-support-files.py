@@ -10,8 +10,8 @@ here = os.path.dirname(__file__)
 support_files = os.path.join(here, '..', 'support-files')
 
 files = [
-    #('http://nightly.ziade.org/distribute_setup.py', 'ez_setup.py'),
-    ('http://pypi.python.org/packages/source/d/distribute/distribute-0.6.3.tar.gz', 'distribute-0.6.3.tar.gz'),
+    ('http://nightly.ziade.org/distribute_setup_3k.py', 'ez_setup.py'),
+    ('http://pypi.python.org/packages/source/d/distribute/distribute-0.6.4.tar.gz', 'distribute-0.6.4.tar.gz'),
     ]
 
 def main():
