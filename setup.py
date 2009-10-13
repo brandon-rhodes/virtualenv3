@@ -13,7 +13,7 @@ f.close()
 
 setup(name='virtualenv3',
       version=version,
-      description="Virtual Python Environment builder",
+      description="Virtual Python 3 Environment builder",
       long_description=long_description,
       classifiers=[
         'Development Status :: 4 - Beta',
