@@ -1,9 +1,14 @@
+import os
+import sys
+if sys.version_info < (3,):
+    print('Error: this is virtualenv3, whose "setup.py"'
+          ' should only be run with Python 3')
+    exit(1)
 try:
     from setuptools import setup
 except ImportError:
     from distutils.core import setup
     print('Note: without Setuptools installed you will have to use "python3 -m virtualenv3 ENV"')
-import sys, os
 
 version = '1.3.4.1'
 
