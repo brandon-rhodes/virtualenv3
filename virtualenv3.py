@@ -233,14 +233,14 @@ def make_exe(fn):
 def install_setuptools(py_executable, unzip=False):
     setup_fn = 'setuptools-0.6c9-py%s.egg' % sys.version[:3]
     search_dirs = ['.', os.path.dirname(__file__), join(os.path.dirname(__file__), 'support-files')]
-    if os.path.splitext(os.path.dirname(__file__))[0] != 'virtualenv':
+    if os.path.splitext(os.path.dirname(__file__))[0] != 'virtualenv3':
         # Probably some boot script; just in case virtualenv is installed...
         try:
-            import virtualenv
+            import virtualenv3
         except ImportError:
             pass
         else:
-            search_dirs.append(os.path.join(os.path.dirname(virtualenv.__file__), 'support-files'))
+            search_dirs.append(os.path.join(os.path.dirname(virtualenv3.__file__), 'support-files'))
     for dir in search_dirs:
         if os.path.exists(join(dir, setup_fn)):
             setup_fn = join(dir, setup_fn)
