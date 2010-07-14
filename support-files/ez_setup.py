@@ -46,12 +46,12 @@ except ImportError:
             args = [quote(arg) for arg in args]
         return os.spawnl(os.P_WAIT, sys.executable, *args) == 0
 
-DEFAULT_VERSION = "0.6.4"
+DEFAULT_VERSION = "0.6.13"
 DEFAULT_URL = "http://pypi.python.org/packages/source/d/distribute/"
 SETUPTOOLS_PKG_INFO = """\
 Metadata-Version: 1.0
 Name: setuptools
-Version: 0.6c9
+Version: 0.6.13
 Summary: xxxx
 Home-page: xxx
 Author: xxx
