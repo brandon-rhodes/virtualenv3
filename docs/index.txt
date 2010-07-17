@@ -323,6 +323,20 @@ Other Documentation and Links
 Changes & News
 --------------
 
+1.3.4.2
+~~~~~~~
+
+* Upgrade the bundled ``distribute`` to version 0.6.13.
+
+* Applied a fix from Holger Krekel for an import error that he was
+  encountering (but that I was never able to reproduce).
+
+* Applied a fix that prevents a ``TypeError`` under Windows when the
+  code of ``ez_setup.py`` is provided to a Python subprocess with a
+  ``-c`` option.
+
+* The ``setup.py`` now complains if run under Python 2.
+
 1.3.4.1
 ~~~~~~~
 

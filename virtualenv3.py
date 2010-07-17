@@ -254,7 +254,7 @@ def install_setuptools(py_executable, unzip=False):
         os.close(fd)
         cmd = [py_executable, ez_setup]
     else:
-        cmd = [py_executable, '-c', EZ_SETUP_PY]
+        cmd = [py_executable, '-c', EZ_SETUP_PY.decode('ASCII')]
     if unzip:
         cmd.append('--always-unzip')
     env = {}
