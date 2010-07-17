@@ -10,7 +10,7 @@ except ImportError:
     from distutils.core import setup
     print('Note: without Setuptools installed you will have to use "python3 -m virtualenv3 ENV"')
 
-version = '1.3.4.1'
+version = '1.3.4.2'
 
 f = open(os.path.join(os.path.dirname(__file__), 'docs', 'index.txt'))
 long_description = f.read().strip()
